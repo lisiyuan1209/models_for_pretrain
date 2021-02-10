@@ -25,13 +25,115 @@ n_gpu = torch.cuda.device_count()
 print('*** n_gpu:', n_gpu, '***')
 
 
+
+"""
+训练：
+
+1 取出输入样本和标签数据
+2 加载这些数据到 GPU 中
+3 清除上次迭代的梯度计算
+ pytorch 中梯度是累加的（在 RNN 中有用），本例中每次迭代前需手动清零
+4 前向传播
+5 反向传播
+6 使用优化器来更新参数
+7 监控训练过程
+"""
+"""
+#1 取出输入样本和标签数据
+train_iter = dataloader(mydataset(),batch size,...)  #按照batch批次取出input_ids(batch_size,seq_len,hidden_size=512)+
+                                                                      token_type_ids(batch_size,seq_len,hidden_size=512)+
+                                                                      label(batch_size,class_number=2) +
+                                                                      = train_iter
+#模型初始化
+model = MyModel(dim=dim, pretrain_model_path=pretrain_model_path, smoothing=smoothing)
+#加载到 GPU 中
+model.to(device)
+  for e in range(epoch):     
+        optimizer = BertAdam() # 设置优化器    
+        
+        model.train() # 将模型设置成训练模式（Sets the module in training mode）
+        
+        for batch in tqdm(train_iter): # 每一次返回 batch_size 条数据
+            #2 加载这些数据到 GPU 中
+            batch = [b.to(device) for b in batch] 
+            
+            #3 清空梯度
+            optimizer.zero_grad() 
+
+            #4 前向传播
+            loss, bert_enc = model(batch, task='train', epoch=epoch) 
+            
+            #5 反向传播计算参数的梯度
+            loss.backward() 
+            
+            #6 更新参数
+            optimizer.step() 
+
+        model.eval() 
+       
+        with torch.no_grad(): # 不进行梯度的反向传播
+            for batch in tqdm(dev_iter): # 每一次返回 batch_size 条数据
+                #加载这些数据到 GPU 中
+                batch = [b.to(device) for b in batch]
+                
+                # 前向传播
+                loss, bert_enc = model(batch, task='train', epoch=epoch) # 进行前向传播，真正开始训练；计算 loss
+                
+             
+                                
+        train_acc = train_right_num / train_num
+        val_acc = val_right_num / val_num
+        
+        
+        if val_loss / val_c < best_loss:
+            early_stop = 0
+            best_loss = val_loss / val_c
+            best_acc = val_acc
+        
+            # 7 监控训练过程        模型保存 :
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            model_to_save = model.module if hasattr(model, 'module') else model
+            state['model_state'] = model_to_save.state_dict()
+            state['loss'] = val_loss / val_c
+            state['acc'] = val_acc
+            state['e'] = e
+            state['time'] = time.time() - time0
+            state['lr'] = lr
+            
+            output_model_file = os.path.join(output_dir, name + '.pkl')
+            torch.save(state, output_model_file)
+           
+            
+            best_epoch = e
+            cost_time = time.time() - time0
+            tmp_train_acc = train_acc
+            best_model = model
+            
+        else:
+            early_stop += 1
+            if early_stop == 2:
+                break
+            
+            model = best_model
+            lr = lr * 0.5
+        print("best_loss:", best_loss)
+    
+    # model-clean
+    del model
+    gc.collect()#垃圾回收机制
+"""
+
+
+
 # 训练、评测
 def train(batch_size=16, 
           pretrain_model_path='', 
           name='', 
           model_type='mlp',
           after_bert_choice='last_cls',
-          dim=1024, 
+          dim=1024,  #全连接hidden units个数
           lr=1e-5, 
           epoch=12, 
           smoothing=0.05,
