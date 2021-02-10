@@ -14,6 +14,17 @@ from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+"""
+评估：
+
+1. 取出输入样本和标签数据
+2. 加载这些数据到 GPU 中
+3. 前向计算
+4. 计算 loss 并监控整个评估过程
+
+"""
+
+
 def predict(dim, 
             names,
             weight,
@@ -46,6 +57,7 @@ def predict(dim,
         # 3.10 add
         model_type = model_types[i]
         if model_type == 'mlp':
+            #1. 取出输入样本和标签数据
             test_iter = MyDataset(file=test_file, is_train=False, pretrain_model_path=pretrain_model_path[i])
             test_iter = get_dataloader(test_iter, batch_size, shuffle=False, drop_last=False)
             model = MyModel(dim=dim[i], pretrain_model_path=pretrain_model_path[i])
@@ -70,8 +82,9 @@ def predict(dim,
         with torch.no_grad():
             j = 0
             for batch in tqdm(test_iter):
-
+                        #2. 加载这些数据到 GPU 中
                 batch = [b.cuda() for b in batch]
+                        #3. 前向计算
                 out = model(batch, task='eval')
                 out = out.cpu() # gpu -> cpu
         
