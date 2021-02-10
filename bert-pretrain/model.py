@@ -30,7 +30,7 @@ class MyModel(nn.Module):
         self.linear1 = nn.Linear(dim, 2)    
         self.dropout = nn.Dropout(0.1)
         self.reset_parameters() # 层初始化
-	#self.loss = F.cross_entropy(input, target) 
+	
 	#标签平滑
         self.label_smooth_loss = LabelSmoothingLoss(classes=2, smoothing=smoothing)
     
@@ -85,7 +85,7 @@ class MyModel(nn.Module):
             out = torch.softmax(bert_enc, dim=-1) # 不要忘了加激活函数！
 		
             # 选择需要哪个loss
-	    loss = F.cross_entropy(bert_enc, labels.view(-1)) #不需要softmax cross entropy会自动计算softmax
+	    #smoothing = 0 是log loss
             loss = self.label_smooth_loss(bert_enc, labels.view(-1))
             return loss, out
 
