@@ -30,6 +30,8 @@ class MyModel(nn.Module):
         self.linear1 = nn.Linear(dim, 2)    
         self.dropout = nn.Dropout(0.1)
         self.reset_parameters() # 层初始化
+	#self.loss = F.cross_entropy(input, target) 
+	#标签平滑
         self.label_smooth_loss = LabelSmoothingLoss(classes=2, smoothing=smoothing)
     
     def reset_parameters(self):
@@ -80,25 +82,49 @@ class MyModel(nn.Module):
             bert_enc = self.dropout(bert_enc)
 
             bert_enc = self.linear1(bert_enc)
-            
-            # 3.5 add label smoothing
+            out = torch.softmax(bert_enc, dim=-1) # 不要忘了加激活函数！
+		
+            # 选择需要哪个loss
+	    loss = F.cross_entropy(bert_enc, labels.view(-1)) #不需要softmax cross entropy会自动计算softmax
             loss = self.label_smooth_loss(bert_enc, labels.view(-1))
-            return loss, bert_enc
+            return loss, out
 
         else:
             inputs, input_types = batch
             # bert enc
             bert_mask = torch.ne(inputs, 0) # 找到 inputs 中不等于 0 的地方，置为 1（0表示padding）
             # bert_enc：词向量   pooled_out：句向量
-            bert_enc, _ = self.bert(inputs, token_type_ids=input_types, attention_mask=bert_mask, output_all_encoded_layers=False) 
+            #bert_enc, _ = self.bert(inputs, token_type_ids=input_types, attention_mask=bert_mask, output_all_encoded_layers=False) 
 
-            #####
-            mask_2 = bert_mask # 其余等于 1 的部分，即有效的部分                
-            mask_2_expand = mask_2.unsqueeze_(-1).expand(bert_enc.size()).float()
-            sum_mask = mask_2_expand.sum(dim=1) # 有效的部分“长度”求和
-            sum_mask = torch.clamp(sum_mask, min=1e-9)
-            bert_enc = torch.sum(bert_enc * mask_2_expand, dim=1) / sum_mask
-            #####
+            if after_bert_choice != "last_four_cls":
+                # bert_enc：词向量   pooled_out：句向量
+                bert_enc, pooled_out = self.bert(inputs, token_type_ids=input_types, attention_mask=bert_mask, output_all_encoded_layers=False) 
+                if after_bert_choice == "mean_pooling":
+                
+                    ##### 3.10 大 bug 修复：取 mean 之前，应该先把 padding 部分的特征去除！！！
+                    mask_2 = bert_mask # 其余等于 1 的部分，即有效的部分                
+                    mask_2_expand = mask_2.unsqueeze_(-1).expand(bert_enc.size()).float()
+                    sum_mask = mask_2_expand.sum(dim=1) # 有效的部分“长度”求和
+                    sum_mask = torch.clamp(sum_mask, min=1e-9)
+                    bert_enc = torch.sum(bert_enc * mask_2_expand, dim=1) / sum_mask
+                    #####
+                elif after_bert_choice == "last_cls":
+                    bert_enc = pooled_out
+            elif after_bert_choice == "last_four_cls":
+                # bert_enc：词向量   pooled_out：句向量
+                all_encoder_layers, _ = self.bert(inputs, token_type_ids=input_types, attention_mask=bert_mask, output_all_encoded_layers=True) 
+                #hidden_states = bert_enc
+                sequence_output12 = all_encoder_layers[-1]
+                h12 = sequence_output12.squeeze(1).  #cls token size = 【batch_size, hidden_size】
+                sequence_output11 = all_encoder_layers[-2]
+                h11 = sequence_output11.squeeze(1)
+                sequence_output10 = all_encoder_layers[-3]
+                h10 = sequence_output10.squeeze(1)
+                sequence_output9  = all_encoder_layers[-4]
+                h9  = sequence_output9.squeeze(1)
+                all_h = torch.cat([h9, h10, h11, h12], 1) 
+                #Also don't forget to add the last CLS token seq_op/pooled_op as you wish..
+                bert_enc = torch.mean(all_h, 1)
                 
             bert_enc = self.linear1(bert_enc)
             out = torch.softmax(bert_enc, dim=-1) # 不要忘了加激活函数！
